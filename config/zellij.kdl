@@ -1,0 +1,109 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  Zellij Config — Ghostty + macOS + zsh
+//  Generated: 2026-03-18
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Core ─────────────────────────────────────────────────────────────────────
+default_shell "zsh"
+default_layout "compact"
+default_mode "normal"
+
+// ── Clipboard ────────────────────────────────────────────────────────────────
+copy_command "pbcopy"
+copy_clipboard "system"
+copy_on_select true
+
+// ── Scroll & Editor ──────────────────────────────────────────────────────────
+scroll_buffer_size 10000
+scrollback_editor "/usr/bin/vim"
+
+// ── Mouse & UI ───────────────────────────────────────────────────────────────
+mouse_mode true
+pane_frames true
+simplified_ui false
+styled_underlines true
+support_kitty_keyboard_protocol true
+auto_layout true
+stacked_resize true
+
+ui {
+    pane_frames {
+        rounded_corners true
+        hide_session_name false
+    }
+}
+
+// ── Session Resurrection ─────────────────────────────────────────────────────
+session_serialization true
+pane_viewport_serialization true
+scrollback_lines_to_serialize 0    // 0 = serialize all
+serialization_interval 60
+
+// ── Behavior ─────────────────────────────────────────────────────────────────
+on_force_close "detach"            // session survives terminal crash
+show_release_notes false
+show_startup_tips false
+
+// ── Environment ──────────────────────────────────────────────────────────────
+env {
+    EDITOR "vim"
+    VISUAL "vim"
+    TERM "xterm-256color"
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Theme: Kanagawa Wave
+// ══════════════════════════════════════════════════════════════════════════════
+themes {
+    kanagawa_wave {
+        bg "#223249"
+        fg "#DCD7BA"
+        black "#181816"
+        red "#C34043"
+        green "#76946A"
+        yellow "#C0A36E"
+        blue "#7E9CD8"
+        magenta "#957FB8"
+        cyan "#6A9589"
+        white "#C8C093"
+        orange "#FFA066"
+    }
+}
+theme "kanagawa_wave"
+
+// Keybindings: using Zellij defaults (Ctrl-based)
+// Ctrl+p = pane, Ctrl+t = tab, Ctrl+n = resize, Ctrl+s = scroll,
+// Ctrl+o = session, Ctrl+h = move, Ctrl+g = lock, Ctrl+q = quit
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Plugin Aliases
+// ══════════════════════════════════════════════════════════════════════════════
+plugins {
+    about location="zellij:about"
+    compact-bar location="zellij:compact-bar"
+    configuration location="zellij:configuration"
+    filepicker location="zellij:strider" {
+        cwd "/"
+    }
+    plugin-manager location="zellij:plugin-manager"
+    session-manager location="zellij:session-manager"
+    status-bar location="zellij:status-bar"
+    strider location="zellij:strider"
+    tab-bar location="zellij:tab-bar"
+    welcome-screen location="zellij:session-manager" {
+        welcome_screen true
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Background Plugins
+// ══════════════════════════════════════════════════════════════════════════════
+load_plugins {
+    // zjframes — auto-hide pane borders when only one pane visible
+    "https://github.com/dj95/zjstatus/releases/latest/download/zjframes.wasm" {
+        hide_frame_for_single_pane "true"
+        hide_frame_except_for_search "true"
+        hide_frame_except_for_scroll "true"
+        hide_frame_except_for_fullscreen "true"
+    }
+}

@@ -98,6 +98,24 @@ the name is derived from your cmux workspace name and the tab's visual position.
 
 without cmux, sessions fall back to `unnamed-t1`.
 
+## zellij config
+
+this repo includes a battle-tested zellij config at [`config/zellij.kdl`](./config/zellij.kdl), optimized for persistent sessions:
+
+- **session resurrection** enabled (`session_serialization`, `pane_viewport_serialization`)
+- **detach on force close** (session survives terminal crash)
+- **kanagawa wave** theme
+- **zjframes** plugin (auto-hides pane borders for single panes)
+- **pbcopy** clipboard integration
+- **10k scrollback** with vim as scrollback editor
+
+to use it:
+
+```sh
+# both client and server
+cp config/zellij.kdl ~/.config/zellij/config.kdl
+```
+
 ## re-running / updating
 
 the wizard is fully idempotent. run it again to:
