@@ -1,0 +1,40 @@
+{
+  "name": "cmux-persistent-ssh",
+  "version": "1.0.0",
+  "description": "bulletproof persistent terminal sessions using cmux + eternal terminal + zellij",
+  "type": "module",
+  "bin": {
+    "cmux-persistent-ssh": "./bin/cmux-persist.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ],
+  "keywords": [
+    "cmux",
+    "eternal-terminal",
+    "zellij",
+    "persistent-sessions",
+    "ssh",
+    "macos",
+    "terminal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yigitkonur/cmux-persistent-ssh.git"
+  },
+  "author": "Yigit Konur",
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^1.1.0"
+  }
+}
