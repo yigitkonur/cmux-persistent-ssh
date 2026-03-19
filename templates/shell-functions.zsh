@@ -2,12 +2,18 @@
 # persistent terminal sessions — github.com/yigitkonur/cmux-persistent-ssh
 # .  = remote ET + zellij  |  , = local zellij  |  .. = plain ET
 __cmux_session_name() {
-  local ws_name tab_pos
-  ws_name=$(cmux tree --workspace "$CMUX_WORKSPACE_ID" 2>/dev/null \
-    | grep 'workspace ' | head -1 | sed 's/.*"\(.*\)".*/\1/' \
-    | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | tr -d '/')
+  local ws_name ws_ref tab_pos
+  local tree_out=$(cmux tree --workspace "$CMUX_WORKSPACE_ID" 2>/dev/null)
+  ws_name=$(echo "$tree_out" | grep 'workspace ' | head -1 | sed 's/.*"\(.*\)".*/\1/' \
+    | tr ' ' '-' | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9_-]//g; s/^-*//; s/-*$//')
   tab_pos=$(cmux list-pane-surfaces 2>/dev/null | awk '/^\*/{print NR}')
-  echo "${ws_name:-unnamed}-t${tab_pos:-1}"
+  # fallback: unnamed workspaces get "ssh-{ref_number}" to avoid collisions
+  if [[ -z "$ws_name" ]]; then
+    ws_ref=$(echo "$tree_out" | grep 'workspace ' | head -1 | sed 's/.*workspace:\([0-9]*\).*/\1/')
+    ws_name="ssh-${ws_ref:-0}"
+  fi
+  echo "${ws_name}-t${tab_pos:-1}"
 }
 
 .() {
