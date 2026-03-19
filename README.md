@@ -45,9 +45,9 @@ the interactive wizard will:
 
 1. install eternal terminal and zellij via homebrew (if needed)
 2. configure ET keepalive (`~/.et`)
-3. add SSH keepalive tuning for your remote host (`~/.ssh/config`)
+3. add SSH keepalive + cmux socket forwarding + env forwarding to `~/.ssh/config`
 4. inject shell functions into `~/.zshrc` (safely, between marker comments)
-5. generate a server optimization script for your remote machine
+5. generate a server optimization script (sshd tuning + AcceptEnv + StreamLocalBindUnlink)
 
 ## prerequisites
 
@@ -67,7 +67,7 @@ ssh myhost 'bash ~/cmux-persist-server-setup.sh'
 
 this tunes (all idempotent, safe to re-run):
 
-- **sshd** — `ClientAliveInterval=60`, `ClientAliveCountMax=120`, `TCPKeepAlive=yes`
+- **sshd** — `ClientAliveInterval=60`, `ClientAliveCountMax=120`, `TCPKeepAlive=yes`, `AcceptEnv CMUX_*`, `StreamLocalBindUnlink=yes`
 - **ET daemon** — `KeepAlive=true` in launchd/systemd (auto-restart on crash)
 - **macOS power** — `sleep=0`, `powernap=0`, `tcpkeepalive=1`, `womp=1`
 - **TCP sysctls** — `keepidle=600s`, `keepintvl=30s`, `keepcnt=15`, `always_keepalive=1`
@@ -149,14 +149,109 @@ your mac                              your server
 │              │                     │ "mcp-ga4-t1"       │
 │ .() function │ ◄──SSH 60s alive──► │                    │
 │              │                     │ your processes,    │
-│ derives name │                     │ scroll buffer,     │
-│ from cmux    │                     │ everything — alive │
+│ derives name │  ── socket fwd ──► │ scroll buffer,     │
+│ from cmux    │  ── env vars ────► │ everything — alive │
+│ cmux sidebar │ ◄── hook events ── │ claude code hooks  │
 └─────────────┘                     └────────────────────┘
 
 wifi drops → ET reconnects in <5s → zellij session untouched
 laptop sleeps → ET reconnects on wake → same session
 server reboots → ET reconnects → zellij starts fresh (but that's what reboots do)
 ```
+
+## claude code sidebar integration (optional)
+
+if you run [claude code](https://docs.anthropic.com/en/docs/claude-code) on your remote server, you can get real-time sidebar updates (status, progress, logs, notifications) in your **local** cmux — even though claude is running remotely.
+
+this works because cmux-persistent-ssh already forwards the cmux socket and environment variables to your server. combine it with [cmux-claude-pro](https://github.com/yigitkonur/cmux-claude-pro) for the full experience.
+
+### setup
+
+**1. local machine — create cmux socket symlink** (cmux's socket path has spaces that break SSH -R):
+
+```bash
+# add to your ~/.zshrc
+if [ -S "$CMUX_SOCKET_PATH" ]; then
+  ln -sf "$CMUX_SOCKET_PATH" /tmp/cmux-local.sock 2>/dev/null
+fi
+```
+
+**2. remote server — install the handler:**
+
+```bash
+# from your local machine
+scp ~/.cc-cmux/handler.cjs yourserver:~/.cc-cmux/handler.cjs
+```
+
+**3. remote server — add cmux socket detection to shell profile:**
+
+```bash
+# add to remote ~/.zshrc or ~/.bashrc
+# SSH SendEnv/AcceptEnv provides correct per-connection workspace/surface IDs.
+# Env file is fallback for ET sessions where SendEnv is unavailable.
+if [ -S /tmp/cmux-fwd.sock ]; then
+  export CMUX_SOCKET_PATH=/tmp/cmux-fwd.sock
+  if [ -z "$CMUX_WORKSPACE_ID" ] && [ -f /tmp/cmux-fwd.env ]; then
+    . /tmp/cmux-fwd.env
+  fi
+fi
+```
+
+**4. remote server — configure claude code hooks:**
+
+```bash
+# on the remote server, add hooks to ~/.claude/settings.json
+cat > ~/.claude/settings.json << 'EOF'
+{
+  "hooks": {
+    "SessionStart":       [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "SessionEnd":         [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "UserPromptSubmit":   [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "PreToolUse":         [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "PostToolUse":        [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "Stop":               [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "SubagentStart":      [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "SubagentStop":       [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "Notification":       [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "PreCompact":         [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }],
+    "PostCompact":        [{ "type": "command", "command": "node ~/.cc-cmux/handler.cjs" }]
+  }
+}
+EOF
+```
+
+### how it works
+
+```
+your mac (cmux)                  your server (claude code)
+┌────────────────┐               ┌────────────────────────┐
+│ cmux sidebar   │ ◄── socket ── │ cc-cmux handler        │
+│ status: Done   │    (SSH -R)   │ reads hook events      │
+│ progress: 100% │               │ writes to cmux socket  │
+│ logs: ...      │               │                        │
+│                │ ── SendEnv ─► │ CMUX_WORKSPACE_ID      │
+│                │               │ CMUX_SURFACE_ID        │
+└────────────────┘               └────────────────────────┘
+```
+
+the `.()` function already handles:
+- **socket forwarding** via `ssh -R` (cmux socket → `/tmp/cmux-fwd.sock` on server)
+- **env file** with workspace/surface IDs (fallback for ET where SendEnv is unavailable)
+- **SSH SendEnv** forwards the correct IDs per-connection (configured automatically by the wizard)
+
+### what you see
+
+when claude code runs on the remote server, your local cmux sidebar shows:
+
+| field | example |
+|-------|---------|
+| status | `Thinking...` → `Working: Edit config.ts` → `Done` |
+| progress | adaptive progress bar (never hits 100% until truly done) |
+| logs | `Read: src/handler.ts`, `Bash: npm test → exit 0` |
+| host | `yigitkonur@macmini (ssh)` |
+| model | `opus-4.6` |
+
+for the full feature list, see [cmux-claude-pro](https://github.com/yigitkonur/cmux-claude-pro).
 
 ## troubleshooting
 
