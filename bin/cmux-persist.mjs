@@ -6,10 +6,10 @@ import { installDeps } from '../lib/install-deps.mjs';
 import { configureEt, configureSsh } from '../lib/configure-client.mjs';
 import { configureShell, uninstallShell } from '../lib/configure-shell.mjs';
 import { configureServer } from '../lib/configure-server.mjs';
-import { ET_KEEPALIVE, CLEANUP_DAYS } from '../lib/constants.mjs';
+import { ET_KEEPALIVE, CLEANUP_DAYS, SSH_CONFIG_PATH } from '../lib/constants.mjs';
+import { readFileIfExists, parseSshHostAddress, isValidHostname } from '../lib/utils.mjs';
 import { userInfo } from 'node:os';
 
-// handle --uninstall and --check flags
 const args = process.argv.slice(2);
 
 if (args.includes('--help') || args.includes('-h')) {
@@ -24,10 +24,14 @@ if (args.includes('--help') || args.includes('-h')) {
   process.exit(0);
 }
 
-// platform gate
 if (process.platform !== 'darwin') {
   console.error('cmux-persistent-ssh is macOS-only. sorry!');
   process.exit(1);
+}
+
+function guardCancel(value) {
+  if (p.isCancel(value)) { p.cancel('setup cancelled'); process.exit(0); }
+  return value;
 }
 
 async function runCheck() {
@@ -64,13 +68,11 @@ async function runSetup() {
   p.intro('cmux-persistent-ssh');
   p.log.info('sets up persistent terminal sessions with cmux + et + zellij');
 
-  // detect
   const s = p.spinner();
   s.start('checking your system...');
   const detected = await detect();
   s.stop('system check complete');
 
-  // show what we found
   if (detected.brew) p.log.success(`homebrew: ${detected.brew}`);
   else { p.log.error('homebrew is required. install from https://brew.sh'); process.exit(1); }
 
@@ -85,52 +87,51 @@ async function runSetup() {
 
   if (detected.hasExistingBlock) p.log.info('existing config detected — will update in place');
 
-  // ask questions
-  const remoteHost = await p.text({
+  // ask questions with input validation
+  const remoteHost = guardCancel(await p.text({
     message: 'remote host name (as used in ssh config)',
     placeholder: 'mini',
     defaultValue: 'mini',
-    validate: v => v.trim() ? undefined : 'host name is required',
-  });
-  if (p.isCancel(remoteHost)) { p.cancel('setup cancelled'); process.exit(0); }
+    validate: v => {
+      if (!v.trim()) return 'host name is required';
+      if (!isValidHostname(v.trim())) return 'host name can only contain letters, numbers, dots, hyphens, underscores';
+    },
+  }));
 
   let hostAddress;
   if (!detected.sshHosts.includes(remoteHost)) {
-    hostAddress = await p.text({
+    hostAddress = guardCancel(await p.text({
       message: 'host IP or hostname',
       placeholder: '192.168.1.200',
-      validate: v => v.trim() ? undefined : 'address is required',
-    });
-    if (p.isCancel(hostAddress)) { p.cancel('setup cancelled'); process.exit(0); }
+      validate: v => {
+        if (!v.trim()) return 'address is required';
+        if (!isValidHostname(v.trim())) return 'address can only contain letters, numbers, dots, hyphens';
+      },
+    }));
   }
 
-  const sshUser = await p.text({
+  const sshUser = guardCancel(await p.text({
     message: 'ssh username',
     defaultValue: userInfo().username,
     placeholder: userInfo().username,
-  });
-  if (p.isCancel(sshUser)) { p.cancel('setup cancelled'); process.exit(0); }
+  }));
 
-  const sshKey = await p.text({
+  const sshKey = guardCancel(await p.text({
     message: 'ssh key path',
     defaultValue: '~/.ssh/id_ed25519',
     placeholder: '~/.ssh/id_ed25519',
-  });
-  if (p.isCancel(sshKey)) { p.cancel('setup cancelled'); process.exit(0); }
+  }));
 
-  const enableLocal = await p.confirm({
+  const enableLocal = guardCancel(await p.confirm({
     message: 'enable local mode? (,() for local zellij sessions)',
     initialValue: true,
-  });
-  if (p.isCancel(enableLocal)) { p.cancel('setup cancelled'); process.exit(0); }
+  }));
 
-  const genServer = await p.confirm({
+  const genServer = guardCancel(await p.confirm({
     message: 'generate server optimization script?',
     initialValue: true,
-  });
-  if (p.isCancel(genServer)) { p.cancel('setup cancelled'); process.exit(0); }
+  }));
 
-  // summary
   p.note(
     [
       `remote host:    ${remoteHost}${hostAddress ? ` (${hostAddress})` : ''}`,
@@ -148,8 +149,8 @@ async function runSetup() {
     "here's what we'll do"
   );
 
-  const proceed = await p.confirm({ message: 'proceed?' });
-  if (p.isCancel(proceed) || !proceed) { p.cancel('setup cancelled'); process.exit(0); }
+  const proceed = guardCancel(await p.confirm({ message: 'proceed?' }));
+  if (!proceed) { p.log.info('ok, nothing changed.'); process.exit(0); }
 
   // execute
   const spin = p.spinner();
@@ -162,22 +163,13 @@ async function runSetup() {
   await configureEt(msg => spin.message(msg));
   spin.stop('~/.et configured');
 
-  if (hostAddress) {
-    spin.start('configuring ssh...');
-    await configureSsh(remoteHost, hostAddress, sshUser, sshKey, msg => spin.message(msg));
-    spin.stop('~/.ssh/config configured');
-  } else {
-    // host already in ssh config, just ensure keepalive settings
-    spin.start('checking ssh config...');
-    // read existing host address from ssh config
-    const { readFileIfExists } = await import('../lib/utils.mjs');
-    const { SSH_CONFIG_PATH } = await import('../lib/constants.mjs');
+  spin.start('configuring ssh...');
+  if (!hostAddress) {
     const sshContent = await readFileIfExists(SSH_CONFIG_PATH);
-    const hostMatch = sshContent?.match(new RegExp(`Host\\s+${remoteHost}[\\s\\S]*?HostName\\s+(\\S+)`, 'i'));
-    const existingAddr = hostMatch?.[1] || remoteHost;
-    await configureSsh(remoteHost, existingAddr, sshUser, sshKey, msg => spin.message(msg));
-    spin.stop('~/.ssh/config configured');
+    hostAddress = parseSshHostAddress(sshContent, remoteHost) || remoteHost;
   }
+  await configureSsh(remoteHost, hostAddress, sshUser, sshKey, msg => spin.message(msg));
+  spin.stop('~/.ssh/config configured');
 
   spin.start('injecting shell functions...');
   await configureShell({
@@ -195,7 +187,6 @@ async function runSetup() {
     spin.stop('server script ready');
   }
 
-  // done
   const nextSteps = [
     'restart your shell or run: source ~/.zshrc',
     '',
@@ -218,7 +209,6 @@ async function runSetup() {
   p.outro("done! your sessions are now persistent. try '.' in a cmux tab.");
 }
 
-// route to the right command
 if (args.includes('--check')) {
   runCheck().catch(console.error);
 } else if (args.includes('--uninstall')) {

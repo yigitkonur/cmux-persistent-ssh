@@ -107,7 +107,7 @@ this repo includes a battle-tested zellij config at [`config/zellij.kdl`](./conf
 - **kanagawa wave** theme
 - **zjframes** plugin (auto-hides pane borders for single panes)
 - **pbcopy** clipboard integration
-- **10k scrollback** with vim as scrollback editor
+- **1M scrollback** with vim as scrollback editor
 
 to use it:
 
